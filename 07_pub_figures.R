@@ -205,9 +205,10 @@ ggsave(file.path(OUTPUT_DIR, "Fig3_dual_cue.png"), fig3,
        width = 200, height = 100, units = "mm", dpi = 300)
 
 # =============================================================================
-# FIGURE 4: Movement arc map (simplified — min 5 fish)
+# FIGURE 4: Peak timing wave maps (spring + fall side by side)
+# Does peak timing propagate geographically across zones?
 # =============================================================================
-cat("  Fig 4: Movement arc map...\n")
+cat("  Fig 4: Peak timing wave maps...\n")
 
 tag_centroids <- mr_oisst %>%
   filter(!is.na(tag_zone)) %>%
@@ -215,6 +216,72 @@ tag_centroids <- mr_oisst %>%
   summarise(clon = median(tag_lon), clat = median(tag_lat), .groups = "drop") %>%
   left_join(geo_short, by = "tag_zone")
 
+# Zone-level median peak week per season
+spring_timing <- seasonal_peaks %>%
+  filter(season == "spring") %>%
+  group_by(tag_zone) %>%
+  summarise(med_peak_week = median(peak_week), n = n(), .groups = "drop") %>%
+  left_join(tag_centroids, by = "tag_zone") %>%
+  filter(!is.na(clon))
+
+fall_timing <- seasonal_peaks %>%
+  filter(season == "fall") %>%
+  group_by(tag_zone) %>%
+  summarise(med_peak_week = median(peak_week), n = n(), .groups = "drop") %>%
+  left_join(tag_centroids, by = "tag_zone") %>%
+  filter(!is.na(clon))
+
+# Shared map base
+map_base <- function() {
+  list(
+    geom_sf(data = zones, fill = "gray97", color = "gray80", linewidth = 0.3),
+    geom_polygon(data = states, aes(x = long, y = lat, group = group),
+                 fill = "gray90", color = "gray50", linewidth = 0.3),
+    annotate("text", x = -81.5, y = 27.5, label = "FL", size = 2.5, color = "gray50", fontface = "bold"),
+    annotate("text", x = -87.5, y = 31.2, label = "AL", size = 2, color = "gray50", fontface = "bold"),
+    annotate("text", x = -89.5, y = 31.2, label = "MS", size = 2, color = "gray50", fontface = "bold"),
+    annotate("text", x = -91.5, y = 31.2, label = "LA", size = 2, color = "gray50", fontface = "bold"),
+    annotate("text", x = -96.5, y = 29.5, label = "TX", size = 2.5, color = "gray50", fontface = "bold"),
+    coord_sf(xlim = c(-98, -80), ylim = c(24, 31.5), expand = FALSE),
+    theme_minimal(base_size = 9),
+    theme(panel.grid = element_line(color = "gray95"), legend.position = "bottom")
+  )
+}
+
+p4a <- ggplot() +
+  map_base() +
+  geom_point(data = spring_timing,
+             aes(x = clon, y = clat, color = med_peak_week, size = n), alpha = 0.9) +
+  geom_text(data = spring_timing, aes(x = clon, y = clat, label = short_label),
+            vjust = -1.3, size = 2, fontface = "bold") +
+  scale_color_viridis_c(option = "viridis", name = "Peak\nweek",
+                        breaks = c(8, 12, 16, 20, 24),
+                        labels = c("Feb", "Mar", "Apr", "May", "Jun")) +
+  scale_size_continuous(name = "N years", range = c(2, 8)) +
+  labs(x = NULL, y = "Latitude", tag = "A") +
+  annotate("text", x = -89, y = 24.5, label = "SPRING", fontface = "bold",
+           color = "#2171B5", size = 4)
+
+p4b <- ggplot() +
+  map_base() +
+  geom_point(data = fall_timing,
+             aes(x = clon, y = clat, color = med_peak_week, size = n), alpha = 0.9) +
+  geom_text(data = fall_timing, aes(x = clon, y = clat, label = short_label),
+            vjust = -1.3, size = 2, fontface = "bold") +
+  scale_color_viridis_c(option = "inferno", name = "Peak\nweek",
+                        breaks = c(28, 32, 36, 40, 44, 48),
+                        labels = c("Jul", "Aug", "Sep", "Oct", "Nov", "Dec")) +
+  scale_size_continuous(name = "N years", range = c(2, 8)) +
+  labs(x = NULL, y = NULL, tag = "B") +
+  annotate("text", x = -89, y = 24.5, label = "FALL", fontface = "bold",
+           color = "#E6550D", size = 4)
+
+fig4 <- p4a + p4b
+ggsave(file.path(OUTPUT_DIR, "Fig4_timing_wave.png"), fig4,
+       width = 340, height = 110, units = "mm", dpi = 300)
+
+# Keep movement arcs as supplementary
+cat("  Fig S1: Movement arc map (supplementary)...\n")
 recap_zoned <- mr_oisst %>%
   filter(recaptured & !is.na(tag_zone) & !is.na(recap_zone))
 
@@ -229,12 +296,11 @@ if (nrow(recap_zoned) > 0) {
               by = c("recap_zone" = "tag_zone")) %>%
     filter(!is.na(x) & !is.na(xend)) %>%
     mutate(
-      delta_lon = abs(xend - x),
-      delta_lat = abs(yend - y),
+      delta_lon = abs(xend - x), delta_lat = abs(yend - y),
       direction = ifelse(delta_lon > delta_lat, "Along-shelf (E-W)", "Cross-shelf (N-S)")
     )
 
-  fig4 <- ggplot() +
+  fig_s1 <- ggplot() +
     geom_sf(data = zones, fill = "gray97", color = "gray80", linewidth = 0.3) +
     geom_polygon(data = states, aes(x = long, y = lat, group = group),
                  fill = "gray90", color = "gray50", linewidth = 0.3) +
@@ -245,24 +311,17 @@ if (nrow(recap_zoned) > 0) {
                arrow = arrow(length = unit(1.5, "mm"), type = "closed")) +
     scale_linewidth_continuous(name = "N recaptures", range = c(0.3, 2.5)) +
     scale_color_manual(values = c("Along-shelf (E-W)" = "#2171B5",
-                                   "Cross-shelf (N-S)" = "#E6550D"),
-                       name = "Movement axis") +
+                                   "Cross-shelf (N-S)" = "#E6550D")) +
     geom_point(data = tag_centroids, aes(x = clon, y = clat), size = 1.5, color = "black") +
     geom_text(data = tag_centroids, aes(x = clon, y = clat, label = short_label),
               size = 2, vjust = -1, fontface = "bold") +
-    # State labels
-    annotate("text", x = -81.5, y = 27.5, label = "FL", size = 3, color = "gray50", fontface = "bold") +
-    annotate("text", x = -87.5, y = 31.2, label = "AL", size = 2.5, color = "gray50", fontface = "bold") +
-    annotate("text", x = -89.5, y = 31.2, label = "MS", size = 2.5, color = "gray50", fontface = "bold") +
-    annotate("text", x = -91.5, y = 31.2, label = "LA", size = 2.5, color = "gray50", fontface = "bold") +
-    annotate("text", x = -96.5, y = 29.5, label = "TX", size = 3, color = "gray50", fontface = "bold") +
     coord_sf(xlim = c(-98, -80), ylim = c(24, 31.5), expand = FALSE) +
     labs(x = "Longitude", y = "Latitude") +
     theme_minimal(base_size = 10) +
     theme(panel.grid = element_line(color = "gray95"),
           legend.position = "bottom", legend.box = "vertical")
 
-  ggsave(file.path(OUTPUT_DIR, "Fig4_movement_arcs.png"), fig4,
+  ggsave(file.path(OUTPUT_DIR, "FigS1_movement_arcs.png"), fig_s1,
          width = 170, height = 110, units = "mm", dpi = 300)
 }
 
