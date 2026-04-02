@@ -95,4 +95,7 @@ cat("\n  Recaptures:", n_recap, "| With zone:", n_recap_zoned, "\n")
 # Make tag_zone an ordered factor for plotting (S to N, then W)
 mr_data$tag_zone_f <- factor(mr_data$tag_zone, levels = 1:21)
 
+# Update the OISST-era subset with zone assignments
+mr_oisst <- mr_data %>% filter(!qa_pre_oisst)
+
 cat("\n02_assign_zones.R complete.\n\n")
